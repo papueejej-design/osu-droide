@@ -1,99 +1,38 @@
-name: Android
+name: Android CI
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
   pull_request:
-    branches: [ master ]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  JAVA_HOME_17: ${{ runner.java_home }} # solo referencia, el setup-java establece JAVA_HOME
+    branches:
+      - master
+  workflow_dispatch:
 
 jobs:
-  setup-and-build:
-    name: Build APKs (debug / pre-release / release)
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v5
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
+          cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
+      - name: Grant execute permission
+        run: chmod +x gradlew
 
-      - name: Install required Android SDK and NDK (22.1.7171670)
-        run: |
-          set -e
-          sudo apt-get update -y
-          # Install sdkmanager (part of cmdline-tools) if not present
-          yes | sdkmanager --install "platform-tools" "platforms;android-33" "cmdline-tools;latest"
-          yes | sdkmanager --install "ndk;22.1.7171670"
-          yes | sdkmanager --licenses
+      - name: Build project
+        run: ./gradlew assembleDebug --stacktrace
 
-      - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Try assemble pre-release (both common names)
-        run: |
-          set -e
-          if ./gradlew assemblePre_release --no-daemon --stacktrace; then
-            echo "assembled assemblePre_release"
-          elif ./gradlew assemblePreRelease --no-daemon --stacktrace; then
-            echo "assembled assemblePreRelease"
-          else
-            echo "Pre-release assemble task not found or failed" >&2
-            # Do not fail the whole job if you don't require pre-release; comment exit 1 if optional
-            # exit 1
-          fi
-
-      - name: Assemble Release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace || echo "assembleRelease failed (maybe signing missing)"
-
-      - name: Upload APK artifacts (robust pattern)
+      - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: apk-artifacts
-          path: |
-            **/build/outputs/**/*.apk
-
-  unit-test:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Run Tests (try common tasks)
-        run: |
-          set -e
-          if ./gradlew test --no-daemon --stacktrace; then
-            echo "ran ./gradlew test"
-          elif ./gradlew testDebugUnitTest --no-daemon --stacktrace; then
-            echo "ran testDebugUnitTest"
-          else
-            echo "Unit tests failed or tasks not found"
-          fi
-
-      - name: Upload Test Results
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: reports
-          path: |
-            **/build/reports/
-            **/build/test-results/
+          name: app-debug
+          path: "**/*.apk"
