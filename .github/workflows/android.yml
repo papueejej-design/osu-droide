@@ -55,15 +55,20 @@ jobs:
           java -version
           ./gradlew --version
 
+      - name: Ensure build directory
+        run: mkdir -p build
+
       - name: Assemble Debug (verbose) and capture log
         run: |
           set -o pipefail
+          mkdir -p build
           ./gradlew assembleDebug --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-assembleDebug.log
 
       - name: Try assemble pre-release (both naming conventions, verbose)
         run: |
           set -e
           set -o pipefail
+          mkdir -p build
           if ./gradlew assemblePre_release --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-assemblePreRelease.log; then
             echo "assembled assemblePre_release"
           elif ./gradlew assemblePreRelease --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-assemblePreRelease.log; then
@@ -76,6 +81,7 @@ jobs:
       - name: Assemble Release (verbose, do not fail pipeline on signing errors)
         run: |
           set -o pipefail
+          mkdir -p build
           ./gradlew assembleRelease --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-assembleRelease.log || true
 
       - name: Upload Gradle logs and reports (always)
@@ -105,10 +111,14 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
+      - name: Ensure build directory for tests
+        run: mkdir -p build
+
       - name: Run Tests (verbose) and capture log
         run: |
           set -o pipefail
-          ./gradlew test --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-test.log || ./gradlew testDebugUnitTest --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-testDebugUnitTest.log || true
+          mkdir -p build
+          ./gradlew test --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-test.log || (./gradlew testDebugUnitTest --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-testDebugUnitTest.log) || true
 
       - name: Upload Test Reports (always)
         if: ${{ always() }}
