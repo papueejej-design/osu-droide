@@ -39,36 +39,54 @@ jobs:
           else
             mv "$HOME/Android/Sdk/cmdline-tools" "$HOME/Android/Sdk/cmdline-tools/latest" || true
           fi
-          # Forzamos la misma ruta para ambas variables para que Gradle no detecte rutas distintas
+          # Unificar variables para que Gradle vea una sola ruta al SDK
           echo "ANDROID_HOME=$HOME/Android/Sdk" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$HOME/Android/Sdk" >> $GITHUB_ENV
           echo "PATH=$HOME/Android/Sdk/cmdline-tools/latest/bin:$HOME/Android/Sdk/platform-tools:$PATH" >> $GITHUB_ENV
-          yes | "$HOME/Android/Sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/Android/Sdk" "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;22.1.7171670"
+          # Instalar componentes necesarios (ajusta versiones si tu proyecto lo requiere)
+          yes | "$HOME/Android/Sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/Android/Sdk" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;22.1.7171670"
           yes | "$HOME/Android/Sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/Android/Sdk" --licenses
 
-      - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Print environment (debug)
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          java -version
+          ./gradlew --version
 
-      - name: Try assemble pre-release (both common names)
+      - name: Assemble Debug (verbose) and capture log
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-assembleDebug.log
+
+      - name: Try assemble pre-release (both naming conventions, verbose)
         run: |
           set -e
-          if ./gradlew assemblePre_release --no-daemon --stacktrace; then
+          set -o pipefail
+          if ./gradlew assemblePre_release --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-assemblePreRelease.log; then
             echo "assembled assemblePre_release"
-          elif ./gradlew assemblePreRelease --no-daemon --stacktrace; then
+          elif ./gradlew assemblePreRelease --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-assemblePreRelease.log; then
             echo "assembled assemblePreRelease"
           else
             echo "Pre-release assemble task not found or failed" >&2
             exit 1
           fi
 
-      - name: Assemble Release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace || echo "assembleRelease failed (signing/config may be missing)"
+      - name: Assemble Release (verbose, do not fail pipeline on signing errors)
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-assembleRelease.log || true
 
-      - name: Upload APK artifacts
+      - name: Upload Gradle logs and reports (always)
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: apk-artifacts
+          name: gradle-logs-and-reports
           path: |
+            build/gradle-*.log
+            build/reports/**
+            **/build/reports/problems/**
             **/build/outputs/**/*.apk
 
   unit-test:
@@ -87,22 +105,17 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Run Tests
+      - name: Run Tests (verbose) and capture log
         run: |
-          set -e
-          if ./gradlew test --no-daemon --stacktrace; then
-            echo "ran ./gradlew test"
-          elif ./gradlew testDebugUnitTest --no-daemon --stacktrace; then
-            echo "ran testDebugUnitTest"
-          else
-            echo "Unit tests failed or tasks not found"
-          fi
+          set -o pipefail
+          ./gradlew test --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-test.log || ./gradlew testDebugUnitTest --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build/gradle-testDebugUnitTest.log || true
 
-      - name: Upload Test Results
+      - name: Upload Test Reports (always)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: reports
+          name: test-reports
           path: |
+            build/gradle-*.log
             **/build/reports/
             **/build/test-results/
